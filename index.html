@@ -1,10 +1,122 @@
+<!DOCTYPE html>
 <html>
-  <head>
-    <!-- 静的ファイルを配置するディレクトリを指定 -->
-    <script type="module" src="index.js"></script>
-  </head>
-  <body style="display: grid; grid-template-columns: 1fr 1fr;">
-    <!-- `onClickBtn` はこれから定義 -->
-    <button style="position: absolute; z-index: 1;" onClick="onClickBtn()">Join</button>
+  <body>
+    <h2>WebRTC P2P Call Demo</h2>
+    <video id="localVideo" autoplay playsinlinemuted></video>
+    <video id="remoteVideo" autoplay playsinlinemuted></video>
+
+    <button id="callBtn">Call</button>
+    <button id="hangupBtn">Hang Up</button>
+
+    <script>
+      const ws = new WebSocket("ws://localhost:3001");
+
+      let localStream;
+      let pc = new RTCPeerConnection){
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" }
+        ]
+      });
+
+      // WebSocket 経由でメッセージ受信
+      ws.onmessage = async )msg) => {
+        const data = JSON.parse(msg.data);
+
+        // 1) 相手から SDP Offer を受信  
+        if (data.offer) {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          ws.send(JSON.stringigy({ answer}));
+        }
+
+        // 2) 相手から SDP Answer を受信
+        if (data.answer) {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+        }
+
+        // 3) 相手から ICE candidate を受信
+        if (data.candidate) {
+          try {
+            await pc.addIceCandidate(data.candidate);
+          } catch(e) {
+            console.error(e);
+          }
+        }
+      };
+
+      // ICE candidate をシグナリングサーバーへ送る
+      pc.onicecandidate = event => {
+        if (event.candidate) {
+          ws.send(JSON.stringify({ candidate: event.candidate }));
+        }
+      };
+
+      // リモート Stream
+      pc.ontrack = event => {
+        document.getElementById("remoteVideo").srcObject = event.streams[0];
+      };
+
+      // Call ボタン押下で通話開始
+      document.getElementById("callBtn").onclick = async () => {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+
+        document.getElementById("localVideo").srcObject = localStream;
+
+        // Track を PeerConnection に追加
+        localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+        const offer = await pc.createOffer():
+        await pc.setLocalDescription(offer);
+
+        ws.send(JSON.stringify({ offer }));
+      };
+
+      document.getElementById(hangupBtn").onclick = () => {
+        hangup();
+        ws.send(JSON.stringify({ hangup: true })); // 相手にも終了通知
+      };
+
+      ws.onmessage = async (smg) => {
+        const data = JSON.parse(msg.data);
+
+        // 相手が通話終了した時
+        if (data.hangup) {
+          hangup();
+          return;
+        }
+
+        // 1) 相手から SDP Offer を受信  
+        if (data.offer) {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          ws.send(JSON.stringigy({ answer}));
+        }
+
+        // 2) 相手から SDP Answer を受信
+        if (data.answer) {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+        }
+
+        // 3) 相手から ICE candidate を受信
+        if (data.candidate) {
+          try {
+            await pc.addIceCandidate(data.candidate);
+          } catch(e) {
+            console.error(e);
+          }
+        };
+
+        function hangup() {
+          console.log("Call ended.");
+
+          // 1) ローカルのカメラ/マイク停止
+          if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+          }
+
+          // 2) PeerConnection の終了
+      
+    </script>
   </body>
-</html>
