@@ -1,41 +1,89 @@
 <!DOCTYPE html>
 <html>
+  <head>
+    <meta charset="UTF-8">
+    <title>WebRTC P2P Call</title>
+    <style>
+      body { font-family: Arial; text-align: center; padding: 20px; }
+      video {
+        width: 45%;
+        border: 2px solid #444;
+        border-radius: 6px;
+        margin: 5px;
+        background: #000;
+      }
+      #buttons { margin-top: 20px; }
+      button {
+        padding: 10px 20px;
+        margin: 10px;
+        font-size: 16px;
+      }
+    </style>
+  </head>
   <body>
     <h2>WebRTC P2P Call Demo</h2>
-    <video id="localVideo" autoplay playsinlinemuted></video>
-    <video id="remoteVideo" autoplay playsinlinemuted></video>
-
-    <button id="callBtn">Call</button>
-    <button id="hangupBtn">Hang Up</button>
+    <div>
+      <video id="localVideo" autoplay playsinlinemuted></video>
+      <video id="remoteVideo" autoplay playsinlinemuted></video>
+    </div>
+    <div id="buttons">
+      <button id="startBtn">Starg Call</button>
+      <button id="hangupBtn" disabled>Hang Up</button>
+    </div>
 
     <script>
+      let localStream;
+      let pc;
+      
       const ws = new WebSocket("ws://localhost:3001");
 
-      let localStream;
-      let pc = new RTCPeerConnection){
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" }
-        ]
-      });
+      function createPeerConnection() {
+        pc = new RTCPeerConnection({
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+        });
 
-      // WebSocket 経由でメッセージ受信
-      ws.onmessage = async )msg) => {
+        pc.onicecandidate = event=> {
+          if (event.candidate) {
+            ws.send(JSON.stringify({ candidate: event.candidate }));
+          }
+        };
+
+        pc.ontrack = event => {
+          document.getElementById("remoteVideo").srcObject = event.streams[0];
+        };
+      }
+
+      createPeerConnection();
+
+      ws.onmessage = async (smg) => {
         const data = JSON.parse(msg.data);
 
-        // 1) 相手から SDP Offer を受信  
-        if (data.offer) {
-          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          ws.send(JSON.stringigy({ answer}));
+        // 相手が通話終了
+        if (data.hangup) {
+          hangup(false); // 自分は通知しない
+          return;
         }
 
-        // 2) 相手から SDP Answer を受信
+        // 相手から SDP Offer を受信
+        if (data.offer) {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+          document.getElementById("localVideo").srcObject = localStream;
+
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          ws.send(JSON.stringify({ answer }));
+
+          enableHangupButton();
+        }
+        // 相手から SDP Answer を受信
         if (data.answer) {
           await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
         }
 
-        // 3) 相手から ICE candidate を受信
+        // 相手から ICE candidate を受信
         if (data.candidate) {
           try {
             await pc.addIceCandidate(data.candidate);
@@ -44,6 +92,70 @@
           }
         }
       };
+
+      // UI ボタン
+      document.getElementById("startBtn").onclick = async () => {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+
+        document.getElementById("localVideo").srcObject = localStream;
+        localStream.getTracks().corEach(track => pc.addTrack(track, localStream));
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        ws.send(JSON.stringify({ offer }));
+
+        enableHangupButton();
+      };
+
+      document.getElementById("hangupBtn").onclick = () => {
+        hangup(true); // 相手に通知する
+      };
+
+      function enableHangupButton() {
+        document.getElementById("hangupBtn").disabled = false;
+        document.getElementById("startBtn").disabled = true;
+      }
+
+      function disableHangupButton() {
+        document.getElementById("hangupBtn").disabled = true;
+        document.getElementById("startBtn").disabled = false;
+      }
+
+      // 通話終了処理
+      function hangup(notify) {
+        console.log("Ending call...");
+
+        // 相手に通知
+        if (notify) {
+          ws.send(JSON.stringify({ hangup: true }));
+        }
+        
+        // カメラ停止
+        if (localStream) {
+          localStream.getTracks().forEach(t => t.stop());
+        }
+
+        // PeerConnection 破棄
+        if (pc) {
+          pc.close();
+        }
+
+        document.getElementById("localVideo").srcObject = null;
+        document.getElementById("remoteVideo").srcObject = null;
+
+        // 再度接続できるように新規作成
+        createPeerConnection();
+        disableHangupButton();
+      }
+
+
+
+
+
+
+
+        /*
 
       // ICE candidate をシグナリングサーバーへ送る
       pc.onicecandidate = event => {
@@ -117,6 +229,41 @@
           }
 
           // 2) PeerConnection の終了
+          if (pc) {
+            pc.getSenders().forEach(sender => sender.track && sender.track.stop());
+            pc.close();
+          }
+
+          // 3) UI をリセット (必要に応じて)
+          document.getElementById("localVideo").srcObject = null;
+          document.getElementById("remoteVideo").srcObject = null;
+
+          // 4) 新しい PeerConnection を作れるように再生成(任意)
+          pc = new RTCPeerConnection({
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+          });
+
+          // 再生成した PC にイベントを再アタッチ(重要)
+          setupPeerConnectionEvents(pc);
+        }
+
+        // PeerConnection にイベントを付ける関数
+        function setupPeerConnectionEvens(pc) {
+          pc.onicecandidate = event=> {
+            ws.send(JSON.stringify({ andidate: event.candidate }));
+          }
+        };
+        pc.ontrack = event => {
+
+          document.getElementById("remoteVideo").srcObject = event.streams[0];
+        };
+      }
+
+      setupPeerConnectionEvents(pc);
+
+*/
+
       
     </script>
   </body>
+</html>
