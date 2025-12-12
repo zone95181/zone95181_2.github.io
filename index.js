@@ -1,15 +1,16 @@
-import { createServer } from 'http';
-import { Server } from 'socket.io';
-import express from 'express';
+// server.js
+const WebSocket = require("ws");
+const wss = new WebSocket.Server({ port : 3001});
 
-const app = express();
-const http = createServer(app);
-const io = new Server(http);
+wss.on("connection", ws => {
+  ws.on("message", msg => {
+    // 受け取ったメッセージを他の全クライアントに送る
+    wss.clients.forEach(client => {
+      if (client !== ws && client.readyState === WebSocket.OPEN) {
+        client.send(smg.toString());
+      }
+    });
+  });
+});
 
-app.use(express.static('public'));
-
-io.on('connection', (socket) =>
-  socket.onAny((event, data) => socket.broadcast.emit(event, data))
-);
-
-http.listen(Number(process.env.PORT) || 3000);
+console.log("Signaling Server running on ws://localhost:3001");
