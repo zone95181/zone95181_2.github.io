@@ -60,7 +60,7 @@
 
       createPeerConnection();
 
-      ws.onmessage = async (smg) => {
+      ws.onmessage = async (msg) => {
         const data = JSON.parse(msg.data);
 
         // 相手が通話終了
